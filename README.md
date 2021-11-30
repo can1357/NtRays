@@ -9,7 +9,7 @@ NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Ke
   
 - Lifting of dynamic relocations for page tables and PFN database with LA57 support.
 
-  ![](https://i.can.ac/mKFfB.png)
+  ![](https://i.can.ac/LxA48.png)
   
 - RSB flush lifting in ISRs.
 
