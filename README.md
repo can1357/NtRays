@@ -2,10 +2,7 @@
 NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Kernel decompilation.
 
 
-
 ## Features
-
-
 - Cleanup of instrumentation and scheduler hinting code.
 
   <img src="https://i.can.ac/QOGGi.png" alt="Before" style="zoom:67%;" />
@@ -23,8 +20,11 @@ NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Ke
   ![](https://i.can.ac/YW5AQ.png)
 
 ## Planned Features
-
 - ETHREAD/EPROCESS where KTHREAD/KPROCESS is used. 
+
+## Installation
+Simply drop the NtRays64.dll into the plugins folder.
+Note: IDA 7.4+ is required.
 
 ## License
 NtRays is licensed under BSD-3-Clause License.
