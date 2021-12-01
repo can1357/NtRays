@@ -223,6 +223,78 @@ hex::microcode_filter mm_dyn_reloc_lifter = [ ] ( codegen_t& cg )
 	return false;
 };
 
+// Lifts CPUID.
+//
+hex::microcode_filter cpuid_lifter = [ ] ( codegen_t& cg )
+{
+	if ( cg.insn.itype != NN_cpuid )
+		return false;
+
+	// Emit the cpuid intrinsic with a "magic" return.
+	//
+	auto cpuid_ci = hex::call_info(
+		tinfo_t{ BT_INT64 },
+		hex::call_arg( hex::phys_reg( R_ax, 4 ), tinfo_t{ BT_INT32 }, "leaf" ),
+		hex::call_arg( hex::phys_reg( R_cx, 4 ), tinfo_t{ BT_INT32 }, "subleaf" )
+	);
+	auto cpuid_call = hex::make_call( cg.insn.ea, hex::helper{ "__cpuid" }, std::move( cpuid_ci ) );
+	auto cpuid_res = hex::reg( cg.mba->alloc_kreg( 8 ), 8 );
+	cg.mb->insert_into_block(
+		hex::make_mov( cg.insn.ea, std::move( cpuid_call ), cpuid_res ).release(),
+		cg.mb->tail
+	);
+
+	// Create movs to each register.
+	//
+	std::pair<mreg_t, const char*> parts[] = {
+		{ reg2mreg( R_ax ), "EAX" },
+		{ reg2mreg( R_bx ), "EBX" },
+		{ reg2mreg( R_cx ), "ECX" },
+		{ reg2mreg( R_dx ), "EDX" }
+	};
+	for ( auto [reg, extr] : parts )
+	{
+		auto extract_ci = hex::call_info( 
+			hex::pure_t{}, 
+			tinfo_t{ BT_INT32 }, 
+			hex::call_arg{ cpuid_res, tinfo_t{ BT_INT64 } }
+		);
+		auto extract_call = hex::make_call( cg.insn.ea, hex::helper( extr ), std::move( extract_ci ) );
+		auto mov_ins = hex::make_mov( cg.insn.ea, std::move( extract_call ), hex::reg( reg, 4 ) );
+		cg.mb->insert_into_block( mov_ins.release(), cg.mb->tail );
+	}
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
+// Lifts XGETBV.
+//
+hex::microcode_filter xgetbv_lifter = [ ] ( codegen_t& cg )
+{
+	if ( cg.insn.itype != NN_xgetbv )
+		return false;
+
+	// Emit the XGETBV intrinsic.
+	//
+	auto xgetbv_ci = hex::call_info(
+		tinfo_t{ BT_INT64 },
+		hex::call_arg( hex::phys_reg( R_cx, 4 ), tinfo_t{ BT_INT32 }, "xcr" )
+	);
+	auto xgetbv_call = hex::make_call( cg.insn.ea, hex::helper{ "_xgetbv" }, std::move( xgetbv_ci ) );
+	auto xgetbv_res = hex::reg( cg.mba->alloc_kreg( 8 ), 8 );
+	cg.mb->insert_into_block(
+		hex::make_mov( cg.insn.ea, std::move( xgetbv_call ), xgetbv_res ).release(),
+		cg.mb->tail
+	);
+
+	// Create movs to each register.
+	//
+	cg.mb->insert_into_block( hex::make_low( cg.insn.ea, xgetbv_res, hex::phys_reg( R_ax, 4 ) ).release(), cg.mb->tail );
+	cg.mb->insert_into_block( hex::make_high( cg.insn.ea, xgetbv_res, hex::phys_reg( R_cx, 4 ) ).release(), cg.mb->tail );
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
 // Lifts RSB flushing on ISRs.
 //
 constexpr uint8_t rsb_pattern[] = {
@@ -304,7 +376,8 @@ static void remove_rsb_flush()
 constexpr hex::component* component_list[] = {
 	&global_optimizer,            &scheduler_hint_optimizer,
 	&shadow_pte_update_optimizer, &mm_dyn_reloc_lifter,
-	&isr_rsb_flush_lifter
+	&isr_rsb_flush_lifter,        &cpuid_lifter,
+	&xgetbv_lifter
 };
 
 // Plugin declaration.
