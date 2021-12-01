@@ -295,6 +295,52 @@ hex::microcode_filter xgetbv_lifter = [ ] ( codegen_t& cg )
 	return true;
 };
 
+// Lifts XSETBV.
+//
+hex::microcode_filter xsetbv_lifter = [ ] ( codegen_t& cg )
+{
+	if ( cg.insn.itype != NN_xsetbv )
+		return false;
+
+	// Emit the intrinsic.
+	//
+	auto xsetbv_ci = hex::call_info(
+		tinfo_t{ BT_VOID },
+		hex::call_arg( hex::phys_reg( R_cx, 4 ), tinfo_t{ BT_INT32 }, "xcr" ),
+		hex::call_arg( { hex::phys_reg( R_ax, 4 ), hex::phys_reg( R_dx, 4 ) }, tinfo_t( BT_INT64 ), "value" )
+	);
+	cg.mb->insert_into_block(
+		hex::make_call( cg.insn.ea, hex::helper{ "_xsetbv" }, std::move( xsetbv_ci ) ).release(),
+		cg.mb->tail
+	);
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
+// Lifts CLAC/STAC.
+//
+hex::microcode_filter stac_clac_lifter = [ ] ( codegen_t& cg )
+{
+	// Pick the intrinsic.
+	//
+	hex::helper helper = {};
+	if ( cg.insn.itype == NN_clac )
+		helper = { "__clac" };
+	else if ( cg.insn.itype == NN_stac )
+		helper = { "__stac" };
+	if ( !helper.name )
+		return false;
+
+	// Emit the intrinsic.
+	//
+	cg.mb->insert_into_block(
+		hex::make_call( cg.insn.ea, helper, hex::call_info( tinfo_t{ BT_VOID } ) ).release(),
+		cg.mb->tail
+	);
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
 // Lifts RSB flushing on ISRs.
 //
 constexpr uint8_t rsb_pattern[] = {
@@ -328,23 +374,10 @@ hex::microcode_filter isr_rsb_flush_lifter = [ ] ( codegen_t& cg )
 
 	// Make a dummy call and insert it into the block.
 	//
-	auto* call_info = new mcallinfo_t{};
-	call_info->cc = CM_CC_FASTCALL;
-	call_info->callee = BADADDR;
-	call_info->solid_args = 0;
-	call_info->call_spd = 0;
-	call_info->stkargs_top = 0;
-	call_info->role = ROLE_UNK;
-	call_info->flags = FCI_FINAL | FCI_PROP | FCI_PURE;
-	call_info->return_type = tinfo_t{ BT_VOID };
-
-	auto* call_ins = new minsn_t( cg.insn.ea );
-	call_ins->opcode = m_call;
-	call_ins->l.make_helper( "__flush_rsb" );
-	call_ins->d.t = mop_f;
-	call_ins->d.f = call_info;
-	call_ins->d.size = 0;
-	cg.mb->insert_into_block( call_ins, cg.mb->tail );
+	cg.mb->insert_into_block(
+		hex::make_call( cg.insn.ea, hex::helper{ "__flush_rsb" }, hex::call_info( tinfo_t{ BT_VOID } ) ).release(),
+		cg.mb->tail
+	);;
 	cg.mb->mark_lists_dirty();
 	return true;
 };
@@ -377,7 +410,8 @@ constexpr hex::component* component_list[] = {
 	&global_optimizer,            &scheduler_hint_optimizer,
 	&shadow_pte_update_optimizer, &mm_dyn_reloc_lifter,
 	&isr_rsb_flush_lifter,        &cpuid_lifter,
-	&xgetbv_lifter
+	&xgetbv_lifter,               &xsetbv_lifter,
+	&stac_clac_lifter
 };
 
 // Plugin declaration.
