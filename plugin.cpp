@@ -307,20 +307,23 @@ hex::microcode_filter isr_rsb_flush_lifter = [ ] ( codegen_t& cg )
 
 // Removes RSB flush gadgets.
 //
-static void remove_rsb_flush() {
+static void remove_rsb_flush() 
+{
+	ea_t iterator = inf_get_min_ea();
 	while ( true )
 	{
-		ea_t res = bin_search2(
-			inf_get_min_ea(),
+		iterator = bin_search2(
+			iterator,
 			inf_get_max_ea(),
 			rsb_pattern,
 			nullptr,
 			std::size( rsb_pattern ),
 			BIN_SEARCH_FORWARD
 		);
-		if ( res == BADADDR )
+		if ( iterator == BADADDR )
 			break;
-		put_bytes( res, rsb_replace_with, std::size( rsb_replace_with ) );
+		put_bytes( iterator, rsb_replace_with, std::size( rsb_replace_with ) );
+		iterator += std::size( rsb_replace_with );
 	}
 }
 
