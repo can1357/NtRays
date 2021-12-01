@@ -404,6 +404,29 @@ static void remove_rsb_flush()
 	}
 }
 
+// Creates KUSER_SHARED_DATA segments.
+//
+static void create_kuser_seg() 
+{
+	constexpr auto km = 0xFFFFF78000000000;
+	constexpr auto um = 0x7FFE0000;
+
+	add_segm( 0x1000, km, km + 0x1000, ".kkuser", "DATA" );
+	add_segm( 0x1000, um, um + 0x1000, ".ukuser", "CONST" );
+
+	if ( inf_is_kernel_mode() )
+		set_name( um, "UKUSER_SHARED_DATA" ), set_name( km, "KUSER_SHARED_DATA" );
+	else
+		set_name( um, "KUSER_SHARED_DATA" ),  set_name( km, "KKUSER_SHARED_DATA" );
+
+	if ( tinfo_t type{}; type.get_named_type( hex::local_type_lib(), "_KUSER_SHARED_DATA" ) )
+	{
+		auto tid = import_type( hex::local_type_lib(), -1, "_KUSER_SHARED_DATA" );
+		create_struct( km, type.get_size(), tid, true );
+		create_struct( um, type.get_size(), tid, true );
+	}
+}
+
 // List of components.
 //
 constexpr hex::component* component_list[] = {
@@ -424,7 +447,7 @@ struct ntrays : plugmod_t
 	void set_state( bool s ) 
 	{
 		if ( s )
-			remove_rsb_flush();
+			remove_rsb_flush(), create_kuser_seg();
 		components.set_state( s );
 	}
 	ntrays() { set_state( nn.altval( 0 ) == 0 ); }
