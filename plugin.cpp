@@ -212,17 +212,8 @@ hex::microcode_filter mm_dyn_reloc_lifter = [ ] ( codegen_t& cg )
 			type.print( &types );
 			msg( "Found relocation: %s %s()\n", types.c_str(), intrinsic_getter );
 
-			auto* call_info = new mcallinfo_t{};
-			call_info->cc = CM_CC_FASTCALL;
-			call_info->callee = BADADDR;
-			call_info->solid_args = 0;
-			call_info->call_spd = 0;
-			call_info->stkargs_top = 0;
-			call_info->role = ROLE_UNK;
-			call_info->flags = FCI_FINAL | FCI_PROP | FCI_PURE;
-			call_info->return_type = type;
-
-			auto call = hex::make_call( cg.insn.ea, hex::helper{ intrinsic_getter }, call_info );
+			auto call_info = hex::call_info( hex::pure_t{}, type );
+			auto call = hex::make_call( cg.insn.ea, hex::helper{ intrinsic_getter }, std::move( call_info ) );
 			auto adj = hex::make_add( cg.insn.ea, { intrinsic_offset, 8 }, std::move( call ), hex::phys_reg( cg.insn.ops[ 0 ].reg, 8 ) );
 			cg.mb->insert_into_block( adj.release(), cg.mb->tail);
 			cg.mb->mark_lists_dirty();
