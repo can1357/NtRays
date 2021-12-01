@@ -11,6 +11,10 @@ NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Ke
 
   ![](https://i.can.ac/BKL9G.png)
   
+- Inference of KUSER_SHARED_DATA segments.
+
+  ![](https://i.can.ac/SGIp2.png)
+  
 - Lifting of dynamic relocations for page tables and PFN database with LA57 support.
 
   ![](https://i.can.ac/LxA48.png)
