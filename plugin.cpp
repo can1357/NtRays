@@ -220,30 +220,11 @@ hex::microcode_filter mm_dyn_reloc_lifter = [ ] ( codegen_t& cg )
 			call_info->stkargs_top = 0;
 			call_info->role = ROLE_UNK;
 			call_info->flags = FCI_FINAL | FCI_PROP | FCI_PURE;
-
-			auto* call_ins = new minsn_t( cg.insn.ea );
-			call_ins->opcode = m_call;
-			call_ins->l.make_helper( intrinsic_getter );
-			call_ins->d.t = mop_f;
-			call_ins->d.f = call_info;
-
-			// Set return type.
-			//
 			call_info->return_type = type;
-			call_ins->d.size = call_info->return_type.get_size();
 
-			// Create an adjusted move instruction.
-			//
-			auto* adjust_ins = new minsn_t( cg.insn.ea );
-			adjust_ins->opcode = m_add;
-			adjust_ins->l.make_number( intrinsic_offset, call_ins->d.size );
-			adjust_ins->r.t = mop_d;
-			adjust_ins->r.d = call_ins;
-			adjust_ins->r.size = call_ins->d.size;
-			adjust_ins->d.t = mop_r;
-			adjust_ins->d.r = reg2mreg( cg.insn.ops[ 0 ].reg );
-			adjust_ins->d.size = call_ins->d.size;
-			cg.mb->insert_into_block( adjust_ins, cg.mb->tail );
+			auto call = hex::make_call( cg.insn.ea, hex::helper{ intrinsic_getter }, call_info );
+			auto adj = hex::make_add( cg.insn.ea, { intrinsic_offset, 8 }, std::move( call ), hex::phys_reg( cg.insn.ops[ 0 ].reg, 8 ) );
+			cg.mb->insert_into_block( adj.release(), cg.mb->tail);
 			cg.mb->mark_lists_dirty();
 			return true;
 		}
