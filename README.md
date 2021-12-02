@@ -26,9 +26,8 @@ NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Ke
 - RSB flush lifting in ISRs.
 
   ![](https://i.can.ac/YW5AQ.png)
-
-## Planned Features
-- ETHREAD/EPROCESS where KTHREAD/KPROCESS is used. 
+  
+- Replacement of KTHREAD/KPROCESS with ETHREAD/EPROCESS in user types, local variables and arguments.
 
 ## Installation
 Simply drop the NtRays64.dll into the plugins folder.
