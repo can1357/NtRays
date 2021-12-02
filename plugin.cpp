@@ -481,6 +481,14 @@ hex::microcode_filter trapframe_lifter = [ ] ( codegen_t& cg )
 		"HalpBlkStubInterrupt",       "HalpBlkSpuriousInterrupt",       "HalpBlkIpiInterrupt",         "HalpBlkLocalErrorInterrupt",
 		"HalpBlkMachineCheckAbort",   "HalpBlkNmiInterrupt",            "HalpBlkUnexpectedInterruptCommon"
 	};
+	
+	// Match against LEA RBP, [RSP+0x80].
+	//
+	uint8_t expected[] = { 0x48 , 0x8D , 0xAC , 0x24 , 0x80 , 0x00 , 0x00, 0x00 };
+	uint8_t bytes[ std::size( expected ) ];
+	get_bytes( bytes, std::size( expected ), cg.insn.ea );
+	if ( memcmp( bytes, expected, std::size( expected ) ) )
+		return false;
 
 	// Match the name against an ISR.
 	//
@@ -490,14 +498,6 @@ hex::microcode_filter trapframe_lifter = [ ] ( codegen_t& cg )
 		return name == n;
 	} );
 	if ( it == std::end( isr_list ) )
-		return false;
-
-	// Match against LEA RBP, [RSP+0x80].
-	//
-	uint8_t expected[] = { 0x48 , 0x8D , 0xAC , 0x24 , 0x80 , 0x00 , 0x00, 0x00 };
-	uint8_t bytes[ std::size( expected ) ];
-	get_bytes( bytes, std::size( expected ), cg.insn.ea );
-	if ( memcmp( bytes, expected, std::size( expected ) ) )
 		return false;
 
 	// Resolve trapframe type.
