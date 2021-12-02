@@ -377,8 +377,6 @@ constexpr std::pair<uint16_t, const char*> simple_instruction_list[] =
 	{ NN_setssbsy,     "__setssbsy"     },
 	{ NN_endbr64,      "__endbr64"      },
 	{ NN_endbr32,      "__endbr32"      },
-	{ NN_rdsspd,       "__rdsspd"       },
-	{ NN_rdsspq,       "__rdsspq"       },
 	{ NN_incsspq,      "__incsspq"      },
 	{ NN_incsspd,      "__incsspd"      },
 	{ NN_rstorssp,     "__rstorssp"     },
@@ -482,6 +480,44 @@ hex::microcode_filter rdrand_rdseed_lifter = [ ] ( codegen_t& cg )
 	}
 	auto ci = hex::call_info( t );
 	ci->spoiled.add( mr_cf, 1 );
+	auto call = hex::make_call( cg.insn.ea, helper, std::move( ci ) );
+
+	// Emit the mov of the result.
+	//
+	cg.mb->insert_into_block(
+		hex::make_mov( cg.insn.ea, std::move( call ), hex::phys_reg( cg.insn.ops[ 0 ].reg, t.get_size() ) ).release(),
+		cg.mb->tail
+	);
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
+// Lifts RDSSP.
+//
+hex::microcode_filter rdssp_lifter = [ ] ( codegen_t& cg )
+{
+	// Pick the intrinsic.
+	//
+	hex::helper helper{};
+	if ( cg.insn.itype == NN_rdsspd )
+		helper = hex::helper{ "__rdsspd" };
+	else if ( cg.insn.itype == NN_rdsspq )
+		helper = hex::helper{ "__rdsspq" };
+	else
+		return false;
+
+	// Create the call information.
+	//
+	tinfo_t t;
+	switch ( cg.insn.ops[ 0 ].dtype )
+	{
+		case dt_byte:  t = tinfo_t{ BT_INT8 };  break;
+		case dt_word:  t = tinfo_t{ BT_INT16 }; break;
+		case dt_dword: t = tinfo_t{ BT_INT32 }; break;
+		case dt_qword: t = tinfo_t{ BT_INT64 }; break;
+		default: return false;
+	}
+	auto ci = hex::call_info( t );
 	auto call = hex::make_call( cg.insn.ea, helper, std::move( ci ) );
 
 	// Emit the mov of the result.
@@ -902,7 +938,8 @@ constexpr hex::component* component_list[] = {
 	&xsetbv_lifter,               &simple_instruction_lifter,
 	&rcl_rcr_lifter,              &trapframe_lifter,
 	&iretq_lifter,                &sysretq_lifter,
-	&type_enforcer,               &rdrand_rdseed_lifter
+	&type_enforcer,               &rdrand_rdseed_lifter,
+	&rdssp_lifter
 };
 
 // Plugin declaration.
