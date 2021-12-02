@@ -410,6 +410,8 @@ constexpr std::pair<uint16_t, const char*> simple_instruction_list[] =
 	{ NN_vmwrite,      "__vmwrite"       },
 	{ NN_vmxoff,       "__vmxoff"        },
 	{ NN_vmxon,        "__vmxon"         },
+	{ NN_invept,       "_invept"         },
+	{ NN_invvpid,      "_invvpid"        },
 	{ NN_invpcid,      "_invpcid"        },
 	{ NN_invlpga,      "_invlpga"        },
 	{ NN_xsaves,       "_xsaves"         },
