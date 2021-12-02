@@ -366,9 +366,9 @@ hex::microcode_filter xsetbv_lifter = [ ] ( codegen_t& cg )
 	return true;
 };
 
-// Lifts CLAC/STAC.
+// Lifts CLAC/STAC/SWAPGS.
 //
-hex::microcode_filter stac_clac_lifter = [ ] ( codegen_t& cg )
+hex::microcode_filter stac_clac_swapgs_lifter = [ ] ( codegen_t& cg )
 {
 	// Pick the intrinsic.
 	//
@@ -377,6 +377,8 @@ hex::microcode_filter stac_clac_lifter = [ ] ( codegen_t& cg )
 		helper = { "__clac" };
 	else if ( cg.insn.itype == NN_stac )
 		helper = { "__stac" };
+	else if ( cg.insn.itype == NN_swapgs )
+		helper = { "__swapgs" };
 	if ( !helper.name )
 		return false;
 
@@ -545,7 +547,7 @@ constexpr hex::component* component_list[] = {
 	&shadow_pte_update_optimizer, &shadow_pte_read_optimizer, 
 	&mm_dyn_reloc_lifter,         &isr_rsb_flush_lifter,        
 	&cpuid_lifter,                &xgetbv_lifter,               
-	&xsetbv_lifter,               &stac_clac_lifter,
+	&xsetbv_lifter,               &stac_clac_swapgs_lifter,
 	&rcl_rcr_lifter
 };
 
