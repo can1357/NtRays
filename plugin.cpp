@@ -530,6 +530,52 @@ hex::microcode_filter rdssp_lifter = [ ] ( codegen_t& cg )
 	return true;
 };
 
+// Lifts VMREAD.
+//
+hex::microcode_filter vmread_lifter = [ ] ( codegen_t& cg )
+{
+	if ( cg.insn.itype != NN_vmread )
+		return false;
+	
+	// Figure out the type used.
+	//
+	tinfo_t src_type;
+	switch ( cg.insn.ops[ 1 ].dtype )
+	{
+		case dt_byte:  src_type = tinfo_t{ BT_INT8 };  break;
+		case dt_word:  src_type = tinfo_t{ BT_INT16 }; break;
+		case dt_dword: src_type = tinfo_t{ BT_INT32 }; break;
+		case dt_qword: src_type = tinfo_t{ BT_INT64 }; break;
+		// We don't know this size.
+		default: return false;
+	}
+
+	// Read memory address where relevant.
+	//
+	bool is_memory = cg.insn.ops[ 0 ].type != o_reg;
+	hex::operand mem_addr = {};
+	if ( is_memory )
+		mem_addr = hex::reg{ cg.load_effective_address( 0 ), 8 };
+
+	// Apply the intrinsic.
+	//
+	auto ci = hex::call_info(
+		hex::pure_t{},
+		src_type,
+		hex::call_arg( hex::phys_reg( cg.insn.ops[ 1 ].reg, src_type.get_size() ), src_type, "field" )
+	);
+	auto result = hex::make_call( cg.insn.ea, hex::helper{ "__vmread" }, std::move( ci ) );
+
+	// Move back the result.
+	//
+	if ( !is_memory )
+		cg.mb->insert_into_block( hex::make_mov( cg.insn.ea, std::move( result ), hex::phys_reg( cg.insn.ops[ 0 ].reg, src_type.get_size() ) ).release(), cg.mb->tail );
+	else
+		cg.mb->insert_into_block( hex::make_stx( cg.insn.ea, std::move( result ), hex::phys_reg( R_ds, 2 ), mem_addr ).release(), cg.mb->tail );
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
 // Lifts RCL/RCR.
 //
 hex::microcode_filter rcl_rcr_lifter = [ ] ( codegen_t& cg )
@@ -939,7 +985,7 @@ constexpr hex::component* component_list[] = {
 	&rcl_rcr_lifter,              &trapframe_lifter,
 	&iretq_lifter,                &sysretq_lifter,
 	&type_enforcer,               &rdrand_rdseed_lifter,
-	&rdssp_lifter
+	&rdssp_lifter,                &vmread_lifter
 };
 
 // Plugin declaration.
