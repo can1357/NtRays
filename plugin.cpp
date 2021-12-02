@@ -95,6 +95,53 @@ hex::insn_optimizer shadow_pte_update_optimizer = [ ] ( mblock_t* blk, minsn_t* 
 	return res;
 };
 
+// Optimizes out blocks generated from PTE reading macro handling shadow ranges.
+//
+hex::insn_optimizer shadow_pte_read_optimizer = [ ] ( mblock_t* blk, minsn_t* ins, auto )
+{
+	// Skip if it isn't a conditional jump.
+	//
+	if ( !is_mcode_jcond( ins->opcode ) )
+		return 0;
+
+	// For each operand and sub-operand:
+	//
+	int res = ins->for_all_ops( hex::mop_visitor( [ ] ( mop_t* op, const tinfo_t* type, bool is_target )
+	{
+		// If and type:
+		//
+		if ( op->t == mop_d && op->d->opcode == m_and )
+		{
+			auto o1 = &op->d->l;
+			auto o2 = &op->d->r;
+			if ( o1->t == mop_n )
+				std::swap( o1, o2 );
+
+			// If Op1 is 0xC00000:
+			//
+			if ( o2->t == mop_n && o2->nnn->value == 0xC00000 )
+			{
+				// If Op2 is MiFlags:
+				//
+				if ( o1->t == mop_v && get_name( o1->g ) == "MiFlags" )
+				{
+					// Replace with number.
+					//
+					op->make_number( 0, 4 );
+					return 1;
+				}
+			}
+		}
+		return 0;
+	} ) );
+
+	// If we changed anything, declare lists dirty.
+	//
+	if ( res )
+		blk->mark_lists_dirty();
+	return res;
+};
+
 // Optimizes out system priority management on IRQL change.
 //
 hex::block_optimizer scheduler_hint_optimizer = [ ] ( mblock_t* blk )
@@ -495,10 +542,11 @@ static void create_kuser_seg()
 //
 constexpr hex::component* component_list[] = {
 	&global_optimizer,            &scheduler_hint_optimizer,
-	&shadow_pte_update_optimizer, &mm_dyn_reloc_lifter,
-	&isr_rsb_flush_lifter,        &cpuid_lifter,
-	&xgetbv_lifter,               &xsetbv_lifter,
-	&stac_clac_lifter,            &rcl_rcr_lifter
+	&shadow_pte_update_optimizer, &shadow_pte_read_optimizer, 
+	&mm_dyn_reloc_lifter,         &isr_rsb_flush_lifter,        
+	&cpuid_lifter,                &xgetbv_lifter,               
+	&xsetbv_lifter,               &stac_clac_lifter,
+	&rcl_rcr_lifter
 };
 
 // Plugin declaration.
