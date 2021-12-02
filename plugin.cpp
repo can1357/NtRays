@@ -394,7 +394,7 @@ constexpr std::pair<uint16_t, const char*> simple_instruction_list[] =
 	{ NN_vmwrite,      "__vmwrite"      },
 	{ NN_vmxoff,       "__vmxoff"       },
 	{ NN_vmxon,        "__vmxon"        }
-	// TODO: vmfunc, vmread, memderef on some vmx intrinsics.
+	// TODO: vmfunc.
 };
 hex::microcode_filter simple_instruction_lifter = [ ] ( codegen_t& cg )
 {
