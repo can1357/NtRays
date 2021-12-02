@@ -393,7 +393,9 @@ constexpr std::pair<uint16_t, const char*> simple_instruction_list[] =
 	{ NN_vmptrst,      "__vmptrst"      },
 	{ NN_vmwrite,      "__vmwrite"      },
 	{ NN_vmxoff,       "__vmxoff"       },
-	{ NN_vmxon,        "__vmxon"        }
+	{ NN_vmxon,        "__vmxon"        },
+	{ NN_invpcid,      "_invpcid"       },
+	{ NN_invlpga,      "_invlpga"       }
 	// TODO: vmfunc.
 };
 hex::microcode_filter simple_instruction_lifter = [ ] ( codegen_t& cg )
@@ -422,8 +424,7 @@ hex::microcode_filter simple_instruction_lifter = [ ] ( codegen_t& cg )
 			case dt_byte:  t = tinfo_t{ BT_INT8 };  break;
 			case dt_word:  t = tinfo_t{ BT_INT16 }; break;
 			case dt_dword: t = tinfo_t{ BT_INT32 }; break;
-			case dt_qword: t = tinfo_t{ BT_INT64 }; break;
-			default: return false;
+			default:       t = tinfo_t{ BT_INT64 }; break;
 		}
 
 		if ( ops.type == o_imm )
