@@ -395,7 +395,9 @@ constexpr std::pair<uint16_t, const char*> simple_instruction_list[] =
 	{ NN_vmxoff,       "__vmxoff"       },
 	{ NN_vmxon,        "__vmxon"        },
 	{ NN_invpcid,      "_invpcid"       },
-	{ NN_invlpga,      "_invlpga"       }
+	{ NN_invlpga,      "_invlpga"       },
+	{ NN_xsaves,       "_xsaves"        },
+	{ NN_xrstors,      "_xrstors"       }
 	// TODO: vmfunc.
 };
 hex::microcode_filter simple_instruction_lifter = [ ] ( codegen_t& cg )
