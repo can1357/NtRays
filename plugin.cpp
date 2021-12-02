@@ -620,94 +620,130 @@ hex::microcode_filter isr_rsb_flush_lifter = [ ] ( codegen_t& cg )
 	return true;
 };
 
+// Type fixing:
+//
+constexpr std::pair<const char*, const char*> parent_types_list[] = {
+	{ "_KTHREAD",  "_ETHREAD"  },
+	{ "_KPROCESS", "_EPROCESS" },
+};
+static std::vector<std::pair<tinfo_t, tinfo_t>> get_parent_type_pairs() 
+{
+	std::vector<std::pair<tinfo_t, tinfo_t>> list = {};
+	for ( auto& [src, dst] : parent_types_list )
+	{
+		tinfo_t srct, dstt{};
+		if ( !srct.get_named_type( hex::local_type_lib(), src ) ||
+			  !dstt.get_named_type( hex::local_type_lib(), dst ) )
+			continue;
+		list.emplace_back( srct, dstt );
+	}
+	return list;
+}
+static tinfo_t type_replace_rec( tinfo_t value, const tinfo_t& src, const tinfo_t& dst ) {
+	
+	if ( value == src )
+		return dst;
+
+	if ( value.is_ptr() )
+	{
+		ptr_type_data_t pi;
+		value.get_ptr_details( &pi );
+		if ( pi.obj_type == src || pi.parent == src )
+		{
+			if ( pi.obj_type == src )
+				pi.obj_type = dst;
+			if ( pi.parent == src )
+				pi.parent = dst;
+
+			value.create_ptr( pi );
+			return value;
+		}
+	}
+	return value;
+}
+
 hex::hexrays_callback type_enforcer = hex::hexrays_callback_for<hxe_maturity>( [ ] ( cfunc_t* cf, ctree_maturity_t mat )
 {
 	if ( mat == CMAT_ZERO )
 	{
-		constexpr std::pair<const char*, const char*> replace_list_s[] = {
-			{ "_KTHREAD",  "_ETHREAD"  },
-			{ "_KPROCESS", "_EPROCESS" },
-		};
-		std::vector<std::pair<tinfo_t, tinfo_t>> replace_list = {};
-		for ( auto& [src, dst] : replace_list_s )
-		{
-			tinfo_t srct, dstt{};
-			if ( !srct.get_named_type( hex::local_type_lib(), src ) ||
-				  !dstt.get_named_type( hex::local_type_lib(), dst ) )
-				continue;
-			replace_list.emplace_back( srct, dstt );
-		}
+		auto replace_list = get_parent_type_pairs();
 		if ( replace_list.empty() )
 			return 0;
-
-		auto enforce_parent_type = [ & ] ( lvar_t& l )
-		{
-			tinfo_t& t = l.type();
-			for ( auto& [src, dst] : replace_list )
-			{
-				if ( t == src )
-				{
-					l.set_lvar_type( dst );
-					return  true;
-				}
-				else if ( t.get_pointed_object() == src )
-				{
-					tinfo_t np{};
-					np.create_ptr( dst );
-					l.set_lvar_type( np );
-					return true;
-				}
-			}
-			return false;
-		};
-
 		for ( auto blk : hex::basic_blocks( cf->mba ) )
 			for ( auto& lvar : blk->mba->vars )
-				enforce_parent_type( lvar );
-	}
-
-	if ( mat == CMAT_FINAL )
-	{
-		//constexpr std::pair<const char*, const char*> replace_list_s[] = {
-		//	{ "_KTHREAD",  "_ETHREAD"  },
-		//	{ "_KPROCESS", "_EPROCESS" },
-		//};
-		//std::vector<std::pair<tinfo_t, tinfo_t>> replace_list = {};
-		//for ( auto& [src, dst] : replace_list_s )
-		//{
-		//	tinfo_t srct, dstt{};
-		//	if ( !srct.get_named_type( hex::local_type_lib(), src ) ||
-		//		  !dstt.get_named_type( hex::local_type_lib(), dst ) )
-		//		continue;
-		//	replace_list.emplace_back( srct, dstt );
-		//}
-		//if ( replace_list.empty() )
-		//	return 0;
-		//
-		//hex::ctree_pre_visitor( [ & ] ( ctree_visitor_t& self, cexpr_t* i )
-		//{
-		//	for ( auto& [src, dst] : replace_list )
-		//	{
-		//		if ( i->type == src )
-		//		{
-		//			//if ( self.parent_expr()->y == i )
-		//			//{
-		//			//	auto* exp = new cexpr_t{ cot_cast, i };
-		//			//	exp->ea = i->ea;
-		//			//	exp->type = dst;
-		//			//	exp->calc_type( false );
-		//			//	self.parent_expr()->y = exp;
-		//			//	msg( "replaced y parent\n" );
-		//			//}
-		//			break;
-		//		}
-		//	}
-		//	return 0;
-		//}, CV_PARENTS ).apply_to( &cf->body, nullptr );
+				for ( auto& [src, dst] : replace_list )
+					lvar.set_lvar_type( type_replace_rec( lvar.type(), src, dst) );
 	}
 	return 0;
 } );
+static void fix_udts()
+{
+	// Get the replace list, if there is nothing to do, return.
+	//
+	auto replace_list = get_parent_type_pairs();
+	if ( replace_list.empty() )
+		return;
 
+	// For each named type:
+	//
+	for ( const char* type_name_o : hex::named_types() )
+	{
+		// Get named type information, if not UDT skip.
+		//
+		tinfo_t ti{};
+		ti.get_named_type( hex::local_type_lib(), type_name_o );
+		if ( !ti.is_udt() )
+			continue;
+
+		// Save the type name since we'll erase the old one.
+		//
+		std::string type_name{ type_name_o };
+
+		// Get UDT details.
+		//
+		udt_type_data_t ui;
+		ti.get_udt_details( &ui );
+
+		// For each field:
+		//
+		size_t replace_count = 0;
+		for ( auto& field : ui )
+		{
+			// Go through the replace list and invoke it on the field type.
+			//
+			auto orig_type = field.type;
+			for ( auto& [s, d] : replace_list )
+			{
+				// Skip in case it's recursive.
+				//
+				if ( ti == d )
+					continue;
+				field.type = type_replace_rec( field.type, s, d );
+			}
+
+			// If field type is changed, increment replacement count.
+			//
+			replace_count += orig_type != field.type;
+		}
+
+		// If type remains unchanged continue.
+		//
+		if ( !replace_count )
+			continue;
+		msg( "Fixed type '%s'.\n", type_name.c_str() );
+
+		// Replace by-ordinal references to the original structure w named references.
+		//
+		auto* mtil = ( til_t* ) hex::local_type_lib();
+		replace_ordinal_typerefs( mtil, &ti );
+
+		// Set the new type.
+		//
+		tinfo_t nti{};
+		nti.create_udt( ui, ti.is_union() ? BTF_UNION : BTF_STRUCT );
+		nti.set_named_type( mtil, type_name.c_str(), NTF_REPLACE );
+	}
+}
 
 // Removes RSB flush gadgets.
 //
@@ -777,7 +813,7 @@ struct ntrays : plugmod_t
 	void set_state( bool s ) 
 	{
 		if ( s )
-			remove_rsb_flush(), create_kuser_seg();
+			remove_rsb_flush(), create_kuser_seg(), fix_udts();
 		components.set_state( s );
 	}
 	ntrays() { set_state( nn.altval( 0 ) == 0 ); }
