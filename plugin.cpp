@@ -341,6 +341,68 @@ hex::microcode_filter stac_clac_lifter = [ ] ( codegen_t& cg )
 	return true;
 };
 
+// Lifts RCL/RCR.
+//
+hex::microcode_filter rcl_rcr_lifter = [ ] ( codegen_t& cg )
+{
+	if ( cg.insn.itype != NN_rcr && cg.insn.itype != NN_rcl )
+		return false;
+	bool is_rcr = cg.insn.itype != NN_rcr;
+	
+	// Figure out the type used.
+	//
+	tinfo_t src_type;
+	switch ( cg.insn.ops[ 0 ].dtype )
+	{
+		case dt_byte:  src_type = tinfo_t{ BT_INT8 };  break;
+		case dt_word:  src_type = tinfo_t{ BT_INT16 }; break;
+		case dt_dword: src_type = tinfo_t{ BT_INT32 }; break;
+		case dt_qword: src_type = tinfo_t{ BT_INT64 }; break;
+		// We don't know this size.
+		default: return false;
+	}
+
+	// Allocate a temporary and mov the input register into it.
+	//
+	auto tmp = hex::reg( cg.mba->alloc_kreg( src_type.get_size() ), src_type.get_size() );
+
+	bool is_memory = cg.insn.ops[ 0 ].type != o_reg;
+	hex::operand mem_addr = {};
+	if ( !is_memory )
+	{
+		cg.mb->insert_into_block( hex::make_mov( cg.insn.ea, hex::phys_reg( cg.insn.ops[ 0 ].reg, src_type.get_size() ), tmp ).release(), cg.mb->tail );
+	}
+	else
+	{
+		mem_addr = hex::reg{ cg.load_effective_address( 0 ), 8 };
+		cg.mb->insert_into_block( hex::make_ldx( cg.insn.ea, hex::phys_reg( R_ds, 2 ), mem_addr, tmp ).release(), cg.mb->tail );
+	}
+
+	// Apply the intrinsic.
+	//
+	hex::call_arg count{ hex::operand{ 1, 1 }, tinfo_t{ BT_INT8 }, "count" };
+	if ( cg.insn.ops[ 1 ].type == o_reg )
+		count = { hex::phys_reg( R_cx, 1 ), tinfo_t{ BT_INT8 }, "count" };
+	auto ci = hex::call_info(
+		hex::pure_t{},
+		src_type,
+		hex::call_arg( tmp, src_type, "value" ),
+		hex::call_arg( hex::reg{ mr_cf, 1 }, tinfo_t{ BT_INT8 }, "carry" ),
+		count
+	);
+	ci->spoiled.add( mr_cf, 1 );
+	ci->spoiled.add( mr_of, 1 );
+	auto result = hex::make_call( cg.insn.ea, hex::helper{ is_rcr ? "__rcr" : "__rcl" }, std::move( ci ) );
+
+	// Move back the result.
+	//
+	if ( !is_memory )
+		cg.mb->insert_into_block( hex::make_mov( cg.insn.ea, std::move( result ), hex::phys_reg( cg.insn.ops[ 0 ].reg, src_type.get_size() ) ).release(), cg.mb->tail );
+	else
+		cg.mb->insert_into_block( hex::make_stx( cg.insn.ea, std::move( result ), hex::phys_reg( R_ds, 2 ), mem_addr ).release(), cg.mb->tail );
+	return true;
+};
+
 // Lifts RSB flushing on ISRs.
 //
 constexpr uint8_t rsb_pattern[] = {
@@ -434,7 +496,7 @@ constexpr hex::component* component_list[] = {
 	&shadow_pte_update_optimizer, &mm_dyn_reloc_lifter,
 	&isr_rsb_flush_lifter,        &cpuid_lifter,
 	&xgetbv_lifter,               &xsetbv_lifter,
-	&stac_clac_lifter
+	&stac_clac_lifter,            &rcl_rcr_lifter
 };
 
 // Plugin declaration.
