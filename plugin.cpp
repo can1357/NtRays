@@ -366,26 +366,128 @@ hex::microcode_filter xsetbv_lifter = [ ] ( codegen_t& cg )
 	return true;
 };
 
-// Lifts CLAC/STAC/SWAPGS.
+// Lifts simple instructions.
 //
-hex::microcode_filter stac_clac_swapgs_lifter = [ ] ( codegen_t& cg )
+constexpr std::pair<uint16_t, const char*> simple_instruction_list[] = 
+{
+	{ NN_clac,         "__clac"         },
+	{ NN_stac,         "__stac"         },
+	{ NN_swapgs,       "__swapgs"       },
+	{ NN_saveprevssp,  "__saveprevssp"  },
+	{ NN_setssbsy,     "__setssbsy"     },
+	{ NN_endbr64,      "__endbr64"      },
+	{ NN_endbr32,      "__endbr32"      },
+	{ NN_rdsspd,       "__rdsspd"       },
+	{ NN_rdsspq,       "__rdsspq"       },
+	{ NN_incsspq,      "__incsspq"      },
+	{ NN_incsspd,      "__incsspd"      },
+	{ NN_rstorssp,     "__rstorssp"     },
+	{ NN_wrssd,        "__wrssd"        },
+	{ NN_wrssq,        "__wrssq"        },
+	{ NN_wrussd,       "__wrussd"       },
+	{ NN_wrussq,       "__wrussq"       },
+	{ NN_clrssbsy,     "__clrssbsy"     },
+	{ NN_clflushopt,   "_mm_clflushopt" },
+	{ NN_clwb,         "_mm_clwb"       },
+	{ NN_vmclear,      "__vmclear"      },
+	{ NN_vmlaunch,     "__vmlaunch"     },
+	{ NN_vmptrld,      "__vmptrld"      },
+	{ NN_vmptrst,      "__vmptrst"      },
+	{ NN_vmwrite,      "__vmwrite"      },
+	{ NN_vmxoff,       "__vmxoff"       },
+	{ NN_vmxon,        "__vmxon"        }
+	// TODO: vmfunc, vmread, memderef on some vmx intrinsics.
+};
+hex::microcode_filter simple_instruction_lifter = [ ] ( codegen_t& cg )
 {
 	// Pick the intrinsic.
 	//
-	hex::helper helper = {};
-	if ( cg.insn.itype == NN_clac )
-		helper = { "__clac" };
-	else if ( cg.insn.itype == NN_stac )
-		helper = { "__stac" };
-	else if ( cg.insn.itype == NN_swapgs )
-		helper = { "__swapgs" };
-	if ( !helper.name )
+	auto it = std::find_if( std::begin( simple_instruction_list ), std::end( simple_instruction_list ), [ & ] ( auto& pair )
+	{
+		return cg.insn.itype == pair.first;
+	} );
+	if ( it == std::end( simple_instruction_list ) )
 		return false;
+	hex::helper helper{ it->second };
+
+	// Create the call information.
+	//
+	auto ci = hex::call_info( tinfo_t{ BT_VOID } );
+	for ( auto& ops : cg.insn.ops )
+	{
+		if ( ops.type == o_void )
+			break;
+
+		tinfo_t t;
+		switch ( ops.dtype )
+		{
+			case dt_byte:  t = tinfo_t{ BT_INT8 };  break;
+			case dt_word:  t = tinfo_t{ BT_INT16 }; break;
+			case dt_dword: t = tinfo_t{ BT_INT32 }; break;
+			case dt_qword: t = tinfo_t{ BT_INT64 }; break;
+			default: return false;
+		}
+
+		if ( ops.type == o_imm )
+		{
+			ci->args.push_back( hex::call_arg{ hex::operand{ ops.value, ( int ) t.get_size() }, t } );
+		}
+		else if ( ops.type == o_reg )
+		{
+			ci->args.push_back( hex::call_arg{ hex::phys_reg( ops.reg, t.get_size() ), t } );
+		}
+		else
+		{
+			tinfo_t pt{};
+			t = tinfo_t{ BT_VOID };
+			pt.create_ptr( t );
+			ci->args.push_back( hex::call_arg{ hex::reg( cg.load_effective_address( &ops - &cg.insn.ops[ 0 ] ), 8 ), pt } );
+		}
+	}
 
 	// Emit the intrinsic.
 	//
 	cg.mb->insert_into_block(
-		hex::make_call( cg.insn.ea, helper, hex::call_info( tinfo_t{ BT_VOID } ) ).release(),
+		hex::make_call( cg.insn.ea, helper, std::move( ci ) ).release(),
+		cg.mb->tail
+	);
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
+// Lifts RDRAND/RDSEED.
+//
+hex::microcode_filter rdrand_rdseed_lifter = [ ] ( codegen_t& cg )
+{
+	// Pick the intrinsic.
+	//
+	hex::helper helper{};
+	if ( cg.insn.itype == NN_rdrand )
+		helper = hex::helper{ "__rdrand" };
+	else if ( cg.insn.itype == NN_rdseed )
+		helper = hex::helper{ "__rdseed" };
+	else
+		return false;
+
+	// Create the call information.
+	//
+	tinfo_t t;
+	switch ( cg.insn.ops[ 0 ].dtype )
+	{
+		case dt_byte:  t = tinfo_t{ BT_INT8 };  break;
+		case dt_word:  t = tinfo_t{ BT_INT16 }; break;
+		case dt_dword: t = tinfo_t{ BT_INT32 }; break;
+		case dt_qword: t = tinfo_t{ BT_INT64 }; break;
+		default: return false;
+	}
+	auto ci = hex::call_info( t );
+	ci->spoiled.add( mr_cf, 1 );
+	auto call = hex::make_call( cg.insn.ea, helper, std::move( ci ) );
+
+	// Emit the mov of the result.
+	//
+	cg.mb->insert_into_block(
+		hex::make_mov( cg.insn.ea, std::move( call ), hex::phys_reg( cg.insn.ops[ 0 ].reg, t.get_size() ) ).release(),
 		cg.mb->tail
 	);
 	cg.mb->mark_lists_dirty();
@@ -797,10 +899,10 @@ constexpr hex::component* component_list[] = {
 	&shadow_pte_update_optimizer, &shadow_pte_read_optimizer, 
 	&mm_dyn_reloc_lifter,         &isr_rsb_flush_lifter,        
 	&cpuid_lifter,                &xgetbv_lifter,               
-	&xsetbv_lifter,               &stac_clac_swapgs_lifter,
+	&xsetbv_lifter,               &simple_instruction_lifter,
 	&rcl_rcr_lifter,              &trapframe_lifter,
 	&iretq_lifter,                &sysretq_lifter,
-	&type_enforcer
+	&type_enforcer,               &rdrand_rdseed_lifter
 };
 
 // Plugin declaration.
