@@ -31,7 +31,7 @@ NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Ke
 
 ## Installation
 Simply drop the NtRays64.dll into the plugins folder.
-Note: IDA 7.4+ is required.
+Note: IDA 7.6+ is required.
 
 ## License
 NtRays is licensed under BSD-3-Clause License.
