@@ -620,6 +620,95 @@ hex::microcode_filter isr_rsb_flush_lifter = [ ] ( codegen_t& cg )
 	return true;
 };
 
+hex::hexrays_callback type_enforcer = hex::hexrays_callback_for<hxe_maturity>( [ ] ( cfunc_t* cf, ctree_maturity_t mat )
+{
+	if ( mat == CMAT_ZERO )
+	{
+		constexpr std::pair<const char*, const char*> replace_list_s[] = {
+			{ "_KTHREAD",  "_ETHREAD"  },
+			{ "_KPROCESS", "_EPROCESS" },
+		};
+		std::vector<std::pair<tinfo_t, tinfo_t>> replace_list = {};
+		for ( auto& [src, dst] : replace_list_s )
+		{
+			tinfo_t srct, dstt{};
+			if ( !srct.get_named_type( hex::local_type_lib(), src ) ||
+				  !dstt.get_named_type( hex::local_type_lib(), dst ) )
+				continue;
+			replace_list.emplace_back( srct, dstt );
+		}
+		if ( replace_list.empty() )
+			return 0;
+
+		auto enforce_parent_type = [ & ] ( lvar_t& l )
+		{
+			tinfo_t& t = l.type();
+			for ( auto& [src, dst] : replace_list )
+			{
+				if ( t == src )
+				{
+					l.set_lvar_type( dst );
+					return  true;
+				}
+				else if ( t.get_pointed_object() == src )
+				{
+					tinfo_t np{};
+					np.create_ptr( dst );
+					l.set_lvar_type( np );
+					return true;
+				}
+			}
+			return false;
+		};
+
+		for ( auto blk : hex::basic_blocks( cf->mba ) )
+			for ( auto& lvar : blk->mba->vars )
+				enforce_parent_type( lvar );
+	}
+
+	if ( mat == CMAT_FINAL )
+	{
+		//constexpr std::pair<const char*, const char*> replace_list_s[] = {
+		//	{ "_KTHREAD",  "_ETHREAD"  },
+		//	{ "_KPROCESS", "_EPROCESS" },
+		//};
+		//std::vector<std::pair<tinfo_t, tinfo_t>> replace_list = {};
+		//for ( auto& [src, dst] : replace_list_s )
+		//{
+		//	tinfo_t srct, dstt{};
+		//	if ( !srct.get_named_type( hex::local_type_lib(), src ) ||
+		//		  !dstt.get_named_type( hex::local_type_lib(), dst ) )
+		//		continue;
+		//	replace_list.emplace_back( srct, dstt );
+		//}
+		//if ( replace_list.empty() )
+		//	return 0;
+		//
+		//hex::ctree_pre_visitor( [ & ] ( ctree_visitor_t& self, cexpr_t* i )
+		//{
+		//	for ( auto& [src, dst] : replace_list )
+		//	{
+		//		if ( i->type == src )
+		//		{
+		//			//if ( self.parent_expr()->y == i )
+		//			//{
+		//			//	auto* exp = new cexpr_t{ cot_cast, i };
+		//			//	exp->ea = i->ea;
+		//			//	exp->type = dst;
+		//			//	exp->calc_type( false );
+		//			//	self.parent_expr()->y = exp;
+		//			//	msg( "replaced y parent\n" );
+		//			//}
+		//			break;
+		//		}
+		//	}
+		//	return 0;
+		//}, CV_PARENTS ).apply_to( &cf->body, nullptr );
+	}
+	return 0;
+} );
+
+
 // Removes RSB flush gadgets.
 //
 static void remove_rsb_flush() 
@@ -674,7 +763,8 @@ constexpr hex::component* component_list[] = {
 	&cpuid_lifter,                &xgetbv_lifter,               
 	&xsetbv_lifter,               &stac_clac_swapgs_lifter,
 	&rcl_rcr_lifter,              &trapframe_lifter,
-	&iretq_lifter,                &sysretq_lifter
+	&iretq_lifter,                &sysretq_lifter,
+	&type_enforcer
 };
 
 // Plugin declaration.
