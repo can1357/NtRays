@@ -14,6 +14,22 @@ static constexpr ea_t make_pte_base( size_t level, size_t max_levels )
 static constexpr ea_t pfn_list_base_va48 = 0xFFFFFA8000000000;
 static constexpr ea_t pfn_list_base_la57 = 0xFFFFDE0000000000;
 
+
+static tinfo_t convert_dtype( uint32_t dtype ) 
+{
+	switch ( dtype )
+	{
+		case dt_byte:   return tinfo_t{ BT_INT8 };
+		case dt_word:   return tinfo_t{ BT_INT16 };
+		case dt_dword:  return tinfo_t{ BT_INT32 };
+		case dt_qword:  return tinfo_t{ BT_INT64 };
+		case dt_byte16: return tinfo_t{ BT_INT128 };
+		case dt_float:  return tinfo_t{ BT_FLOAT };
+		case dt_double: return tinfo_t{ BTMT_DOUBLE };
+		default:        return tinfo_t{ BT_VOID };
+	}
+}
+
 // Optimizes out blocks generated due to inlined scheduler hints, hv enlightenments or instrumentations.
 //
 hex::insn_optimizer global_optimizer = [ ] ( mblock_t* blk, minsn_t* ins, auto )
@@ -420,29 +436,23 @@ hex::microcode_filter simple_instruction_lifter = [ ] ( codegen_t& cg )
 		if ( ops.type == o_void )
 			break;
 
-		tinfo_t t;
-		switch ( ops.dtype )
-		{
-			case dt_byte:  t = tinfo_t{ BT_INT8 };  break;
-			case dt_word:  t = tinfo_t{ BT_INT16 }; break;
-			case dt_dword: t = tinfo_t{ BT_INT32 }; break;
-			default:       t = tinfo_t{ BT_INT64 }; break;
-		}
-
 		if ( ops.type == o_imm )
 		{
+			tinfo_t t = convert_dtype( ops.dtype );
+			if ( t.is_void() ) return false;
 			ci->args.push_back( hex::call_arg{ hex::operand{ ops.value, ( int ) t.get_size() }, t } );
 		}
 		else if ( ops.type == o_reg )
 		{
+			tinfo_t t = convert_dtype( ops.dtype );
+			if ( t.is_void() ) return false;
 			ci->args.push_back( hex::call_arg{ hex::phys_reg( ops.reg, t.get_size() ), t } );
 		}
 		else
 		{
-			tinfo_t pt{};
-			t = tinfo_t{ BT_VOID };
-			pt.create_ptr( t );
-			ci->args.push_back( hex::call_arg{ hex::reg( cg.load_effective_address( &ops - &cg.insn.ops[ 0 ] ), 8 ), pt } );
+			tinfo_t t{};
+			t.create_ptr( tinfo_t{ BT_VOID } );
+			ci->args.push_back( hex::call_arg{ hex::reg( cg.load_effective_address( &ops - &cg.insn.ops[ 0 ] ), 8 ), t } );
 		}
 	}
 
@@ -472,15 +482,9 @@ hex::microcode_filter rdrand_rdseed_lifter = [ ] ( codegen_t& cg )
 
 	// Create the call information.
 	//
-	tinfo_t t;
-	switch ( cg.insn.ops[ 0 ].dtype )
-	{
-		case dt_byte:  t = tinfo_t{ BT_INT8 };  break;
-		case dt_word:  t = tinfo_t{ BT_INT16 }; break;
-		case dt_dword: t = tinfo_t{ BT_INT32 }; break;
-		case dt_qword: t = tinfo_t{ BT_INT64 }; break;
-		default: return false;
-	}
+	tinfo_t t = convert_dtype( cg.insn.ops[ 0 ].dtype );
+	if ( t.is_void() ) return false;
+
 	auto ci = hex::call_info( t );
 	ci->spoiled.add( mr_cf, 1 );
 	auto call = hex::make_call( cg.insn.ea, helper, std::move( ci ) );
@@ -511,15 +515,9 @@ hex::microcode_filter rdssp_lifter = [ ] ( codegen_t& cg )
 
 	// Create the call information.
 	//
-	tinfo_t t;
-	switch ( cg.insn.ops[ 0 ].dtype )
-	{
-		case dt_byte:  t = tinfo_t{ BT_INT8 };  break;
-		case dt_word:  t = tinfo_t{ BT_INT16 }; break;
-		case dt_dword: t = tinfo_t{ BT_INT32 }; break;
-		case dt_qword: t = tinfo_t{ BT_INT64 }; break;
-		default: return false;
-	}
+	tinfo_t t = convert_dtype( cg.insn.ops[ 0 ].dtype );
+	if ( t.is_void() ) return false;
+
 	auto ci = hex::call_info( t );
 	auto call = hex::make_call( cg.insn.ea, helper, std::move( ci ) );
 
@@ -542,16 +540,8 @@ hex::microcode_filter vmread_lifter = [ ] ( codegen_t& cg )
 	
 	// Figure out the type used.
 	//
-	tinfo_t src_type;
-	switch ( cg.insn.ops[ 1 ].dtype )
-	{
-		case dt_byte:  src_type = tinfo_t{ BT_INT8 };  break;
-		case dt_word:  src_type = tinfo_t{ BT_INT16 }; break;
-		case dt_dword: src_type = tinfo_t{ BT_INT32 }; break;
-		case dt_qword: src_type = tinfo_t{ BT_INT64 }; break;
-		// We don't know this size.
-		default: return false;
-	}
+	tinfo_t src_type = convert_dtype( cg.insn.ops[ 1 ].dtype );
+	if ( src_type.is_void() ) return false;
 
 	// Read memory address where relevant.
 	//
@@ -589,16 +579,8 @@ hex::microcode_filter rcl_rcr_lifter = [ ] ( codegen_t& cg )
 	
 	// Figure out the type used.
 	//
-	tinfo_t src_type;
-	switch ( cg.insn.ops[ 0 ].dtype )
-	{
-		case dt_byte:  src_type = tinfo_t{ BT_INT8 };  break;
-		case dt_word:  src_type = tinfo_t{ BT_INT16 }; break;
-		case dt_dword: src_type = tinfo_t{ BT_INT32 }; break;
-		case dt_qword: src_type = tinfo_t{ BT_INT64 }; break;
-		// We don't know this size.
-		default: return false;
-	}
+	tinfo_t src_type = convert_dtype( cg.insn.ops[ 0 ].dtype );
+	if ( src_type.is_void() ) return false;
 
 	// Allocate a temporary and mov the input register into it.
 	//
