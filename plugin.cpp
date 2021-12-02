@@ -27,24 +27,26 @@ hex::insn_optimizer global_optimizer = [ ] ( mblock_t* blk, minsn_t* ins, auto )
 	//
 	int res = ins->for_all_ops( hex::mop_visitor( [ ] ( mop_t* op, const tinfo_t* type, bool is_target )
 	{
-		const char* force_zero_list[] = {
-			"KiIrqlFlags",
-			"HvlEnlightenments",
-			"PerfGlobalGroupMask",
-			"HvlLongSpinCountMask"
+		std::pair<size_t, const char*> force_zero_list[] = {
+			{ 4,    "KiIrqlFlags"          },
+			{ 4,    "HvlEnlightenments"    },
+			{ 4,    "HvlLongSpinCountMask" },
+			{ 0x10, "PerfGlobalGroupMask"  },
 		};
 
 		// If referencing any of the globals above at any offset [0-8], assume constant zero.
 		//
-		for ( int delta = 0; delta <= 8; delta++ )
+		for ( int delta = 0; delta <= 0x10; delta++ )
 		{
 			auto name = get_name( op->g - delta );
-			for ( auto& item : force_zero_list )
+			for ( auto& [sz, item] : force_zero_list )
 			{
+				if ( delta >= sz )
+					continue;
 				if ( name == item )
 				{
 					msg( "Ignoring %s\n", item );
-					op->make_number( 0, 4 );
+					op->make_number( 0, op->size );
 					return 1;
 				}
 			}
