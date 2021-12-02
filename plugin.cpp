@@ -451,6 +451,131 @@ hex::microcode_filter rcl_rcr_lifter = [ ] ( codegen_t& cg )
 		cg.mb->insert_into_block( hex::make_mov( cg.insn.ea, std::move( result ), hex::phys_reg( cg.insn.ops[ 0 ].reg, src_type.get_size() ) ).release(), cg.mb->tail );
 	else
 		cg.mb->insert_into_block( hex::make_stx( cg.insn.ea, std::move( result ), hex::phys_reg( R_ds, 2 ), mem_addr ).release(), cg.mb->tail );
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
+// Lifts trap-frame setup.
+//
+hex::microcode_filter trapframe_lifter = [ ] ( codegen_t& cg )
+{
+	constexpr const char* isr_list[] = {
+		"KxIsrLinkage",               "KiCallUserMode",                 "KiApcInterrupt",              "KiHvInterrupt",
+		"KiVmbusInterrupt0",          "KiVmbusInterrupt1",              "KiVmbusInterrupt2",           "KiVmbusInterrupt3",
+		"KiSwInterrupt",              "KiDpcInterrupt",                 "KiIpiInterrupt",              "KyStartUserThread",
+		"KiDivideErrorFault",         "KxDebugTrapOrFault",             "KiNmiInterruptStart",         "KiBreakpointTrap",
+		"KiOverflowTrap",             "KiBoundFault",                   "KiInvalidOpcodeFault",        "KiNpxNotAvailableFault",
+		"KiDoubleFaultAbort",         "KiNpxSegmentOverrunAbort",       "KiInvalidTssFault",           "KiSegmentNotPresentFault",
+		"KiStackFault",               "KiGeneralProtectionFault",       "KiPageFault",                 "KiFloatingErrorFault",
+		"KiAlignmentFault",           "KiMcheckAbort",                  "KxMcheckAlternateReturn",     "KiXmmException",
+		"KiVirtualizationException",  "KiControlProtectionFault",       "KiRaiseSecurityCheckFailure", "KiRaiseAssertion",
+		"KiDebugServiceTrap",         "KiSystemService",                "KiSystemCall32",              "KiServiceInternal",
+		"KiSystemCall64",             "KiSystemCall32Shadow",           "KiSystemCall64Shadow",        "HalpBlkDivideErrorFault",
+		"HalpBlkDebugExceptionTrap",  "HalpBlkBreakpointTrap",          "HalpBlkOverflowTrap",         "HalpBlkBoundRangeExceededFault",
+		"HalpBlkInvalidOpcodeFault",  "HalpBlkDeviceNotAvailableFault", "HalpBlkDoubleFaultAbort",     "HalpBlkCoprocessorSegmentOverrunFault",
+		"HalpBlkInvalidTssFault",     "HalpBlkSegmentNotPresentFault",  "HalpBlkStackSegmentFault",    "HalpBlkGeneralProtectionFault",
+		"HalpBlkPageFault",           "HalpBlkFloatingPointErrorFault", "HalpBlkAlignmentFault",       "HalpBlkFloatingPointFault",
+		"HalpBlkVirtualizationFault", "HalpBlkReservedVector21",        "HalpBlkReservedVector22",     "HalpBlkReservedVector23",
+		"HalpBlkReservedVector24",    "HalpBlkReservedVector25",        "HalpBlkReservedVector26",     "HalpBlkReservedVector27",
+		"HalpBlkReservedVector28",    "HalpBlkReservedVector29",        "HalpBlkReservedVector30",     "HalpBlkReservedVector31",
+		"HalpBlkStubInterrupt",       "HalpBlkSpuriousInterrupt",       "HalpBlkIpiInterrupt",         "HalpBlkLocalErrorInterrupt",
+		"HalpBlkMachineCheckAbort",   "HalpBlkNmiInterrupt",            "HalpBlkUnexpectedInterruptCommon"
+	};
+
+	// Match the name against an ISR.
+	//
+	auto name = get_name( cg.mba->entry_ea );
+	auto it = std::find_if( std::begin( isr_list ), std::end( isr_list ), [ & ] ( const char* n )
+	{
+		return name == n;
+	} );
+	if ( it == std::end( isr_list ) )
+		return false;
+
+	// Match against LEA RBP, [RSP+0x80].
+	//
+	uint8_t expected[] = { 0x48 , 0x8D , 0xAC , 0x24 , 0x80 , 0x00 , 0x00, 0x00 };
+	uint8_t bytes[ std::size( expected ) ];
+	get_bytes( bytes, std::size( expected ), cg.insn.ea );
+	if ( memcmp( bytes, expected, std::size( expected ) ) )
+		return false;
+
+	// Resolve trapframe type.
+	//
+	tinfo_t tinfo = {};
+	if ( !tinfo.get_named_type( hex::local_type_lib(), "_KTRAP_FRAME" ) )
+		return false;
+
+	tinfo_t pinfo = {};
+	ptr_type_data_t pi{ tinfo_t(), 0 };
+	pi.parent =     tinfo;
+	pi.obj_type =   tinfo;
+	pi.delta =      0x80;
+	pi.taptr_bits = 0x80;
+	pinfo.create_ptr( pi );
+
+	msg( "Inserted KeGetTrapFrame.\n" );
+	auto tf = hex::make_call( 
+		cg.insn.ea, 
+		hex::helper{ "KeGetTrapFrame" },
+		hex::call_info( hex::pure_t{}, pinfo )
+	);
+	cg.mb->insert_into_block( hex::make_mov( cg.insn.ea, std::move( tf ), hex::phys_reg( R_bp, 8 ) ).release(), cg.mb->tail );
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
+// Lifts the IRETQ instruction.
+//
+hex::microcode_filter iretq_lifter = [ ] ( codegen_t& cg )
+{
+	if ( cg.insn.itype != NN_iretq )
+		return false;
+
+	auto load_at = [ & ] ( tinfo_t typ, size_t offset, const char* name )
+	{
+		auto ltmp = hex::reg{ cg.mba->alloc_kreg( 8 ), 8 };
+		auto tmp = hex::reg{ cg.mba->alloc_kreg( typ.get_size() ), ( int ) typ.get_size() };
+		cg.mb->insert_into_block( hex::make_add( cg.insn.ea, hex::phys_reg( R_sp, 8 ), hex::operand{ offset, 8 }, ltmp ).release(), cg.mb->tail );
+		cg.mb->insert_into_block( hex::make_ldx( cg.insn.ea, hex::phys_reg( R_ss, 2 ), ltmp, tmp ).release(), cg.mb->tail );
+		return hex::call_arg( tmp, typ, name );
+	};
+
+	tinfo_t vptr{};
+	vptr.create_ptr( tinfo_t{ BT_VOID } );
+	auto ci = hex::call_info(
+		tinfo_t{ BT_VOID },
+		load_at( vptr, 0, "ip" ),
+		load_at( tinfo_t{ BT_INT16 }, 8, "cs" ),
+		load_at( tinfo_t{ BT_INT32 }, 0x10, "flags" ),
+		load_at( vptr, 0x18, "sp" ),
+		load_at( tinfo_t{ BT_INT16 }, 0x20, "ss" )
+	);
+	ci->flags |= FCI_NORET;
+	cg.mb->insert_into_block( hex::make_call( cg.insn.ea, hex::helper( "__iretq" ), std::move( ci ) ).release(), cg.mb->tail );
+	cg.mb->mark_lists_dirty();
+	return true;
+};
+
+// Lifts the SYSRETQ instruction.
+//
+hex::microcode_filter sysretq_lifter = [ ] ( codegen_t& cg )
+{
+	// Sysret with REX.W.
+	//
+	if ( cg.insn.itype != NN_sysret || get_byte( cg.insn.ea ) != 0x48 )
+		return false;
+
+	tinfo_t vptr{};
+	vptr.create_ptr( tinfo_t{ BT_VOID } );
+	auto ci = hex::call_info(
+		tinfo_t{ BT_VOID },
+		hex::call_arg( hex::phys_reg( R_cx, 8 ), vptr, "ip" ),
+		hex::call_arg( hex::phys_reg( R_r11, 4 ), tinfo_t{ BT_INT32 }, "flags" )
+	);
+	ci->flags |= FCI_NORET;
+	cg.mb->insert_into_block( hex::make_call( cg.insn.ea, hex::helper( "__sysretq" ), std::move( ci ) ).release(), cg.mb->tail );
+	cg.mb->mark_lists_dirty();
 	return true;
 };
 
@@ -548,7 +673,8 @@ constexpr hex::component* component_list[] = {
 	&mm_dyn_reloc_lifter,         &isr_rsb_flush_lifter,        
 	&cpuid_lifter,                &xgetbv_lifter,               
 	&xsetbv_lifter,               &stac_clac_swapgs_lifter,
-	&rcl_rcr_lifter
+	&rcl_rcr_lifter,              &trapframe_lifter,
+	&iretq_lifter,                &sysretq_lifter
 };
 
 // Plugin declaration.
