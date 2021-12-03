@@ -89,7 +89,7 @@ hex::insn_optimizer shadow_pte_update_optimizer = [ ] ( mblock_t* blk, minsn_t* 
 	{
 		// If call type:
 		//
-		if ( op->t == mop_d && op->d->opcode == m_call )
+		if ( op->t == mop_d && op->d->opcode == m_call && op->d->l.t == mop_v )
 		{
 			// If checking shadow PTE, assume 0 return.
 			//
@@ -167,7 +167,7 @@ hex::block_optimizer scheduler_hint_optimizer = [ ] ( mblock_t* blk )
 	{
 		// Skip if it does not match scheduler hint:
 		//
-		if ( ins->opcode != m_call || get_name( ins->l.g ) != "KiRemoveSystemWorkPriorityKick" )
+		if ( ins->opcode != m_call || ins->l.t != mop_v || get_name( ins->l.g ) != "KiRemoveSystemWorkPriorityKick" )
 			continue;
 		msg( "Ignoring KiRemoveSystemWorkPriorityKick\n" );
 
@@ -184,6 +184,26 @@ hex::block_optimizer scheduler_hint_optimizer = [ ] ( mblock_t* blk )
 					pred->make_nop( ins );
 	}
 	return changes;
+};
+
+// Lifts int2c as assert failure.
+//
+hex::microcode_filter nt_assert_lifter = [ ] ( codegen_t& cg )
+{
+	if ( cg.insn.itype != NN_int ||
+		  cg.insn.ops[ 0 ].value != 0x2C )
+		return false;
+
+	auto ci = hex::call_info(
+		tinfo_t{ BT_VOID },
+		hex::call_arg( hex::phys_reg( R_cx, 4 ), tinfo_t{ BT_INT32 }, "code" )
+	);
+	ci->flags |= FCI_NORET;
+	cg.mb->insert_into_block(
+		hex::make_call( cg.insn.ea, hex::helper{ "__assert_fail" }, std::move( ci ) ).release(),
+		cg.mb->tail
+	);
+	return true;
 };
 
 // Lifts MOVABS on dynamic relocations to Mm intrinsics.
@@ -976,7 +996,8 @@ constexpr hex::component* component_list[] = {
 	&rcl_rcr_lifter,              &trapframe_lifter,
 	&iretq_lifter,                &sysretq_lifter,
 	&type_enforcer,               &rdrand_rdseed_lifter,
-	&rdssp_lifter,                &vmread_lifter
+	&rdssp_lifter,                &vmread_lifter,
+	&nt_assert_lifter
 };
 
 // Plugin declaration.
