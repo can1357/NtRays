@@ -881,6 +881,7 @@ static void fix_udts()
 
 	// For each named type:
 	//
+	std::vector<std::pair<std::string, tinfo_t>> list = {};
 	for ( const char* type_name_o : hex::named_types() )
 	{
 		// Get named type information, if not UDT skip.
@@ -892,8 +893,10 @@ static void fix_udts()
 
 		// Save the type name since we'll erase the old one.
 		//
-		std::string type_name{ type_name_o };
-
+		list.emplace_back( std::string{ type_name_o }, ti );
+	}
+	for ( auto& [type_name, ti] : list )
+	{
 		// Get UDT details.
 		//
 		udt_type_data_t ui;
