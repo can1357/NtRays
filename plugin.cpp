@@ -950,7 +950,11 @@ static void remove_rsb_flush()
 	ea_t iterator = inf_get_min_ea();
 	while ( true )
 	{
+#ifdef IDP_INTERFACE_VERSION>=900
+		iterator = bin_search3(
+#else
 		iterator = bin_search2(
+#endif
 			iterator,
 			inf_get_max_ea(),
 			rsb_pattern,
@@ -982,9 +986,23 @@ static void create_kuser_seg()
 
 	if ( tinfo_t type{}; type.get_named_type( hex::local_type_lib(), "_KUSER_SHARED_DATA" ) )
 	{
+#ifdef IDP_INTERFACE_VERSION>=900
+		tinfo_t tif;
+		tif.get_named_type(nullptr, "_KUSER_SHARED_DATA");
+		if (!tif.present())
+		{
+			msg("lack define of _KUSER_SHARED_DATA, strange\n");
+		}
+		else
+		{
+			create_struct( km, type.get_size(), tif.get_tid(), true);
+			create_struct( um, type.get_size(), tif.get_tid(), true);
+		}
+#else
 		auto tid = import_type( hex::local_type_lib(), -1, "_KUSER_SHARED_DATA" );
 		create_struct( km, type.get_size(), tid, true );
 		create_struct( um, type.get_size(), tid, true );
+#endif
 	}
 }
 
