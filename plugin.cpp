@@ -950,7 +950,7 @@ static void remove_rsb_flush()
 	ea_t iterator = inf_get_min_ea();
 	while ( true )
 	{
-#ifdef IDP_INTERFACE_VERSION>=900
+#if IDP_INTERFACE_VERSION>=900
 		iterator = bin_search3(
 #else
 		iterator = bin_search2(
@@ -986,7 +986,7 @@ static void create_kuser_seg()
 
 	if ( tinfo_t type{}; type.get_named_type( hex::local_type_lib(), "_KUSER_SHARED_DATA" ) )
 	{
-#ifdef IDP_INTERFACE_VERSION>=900
+#if IDP_INTERFACE_VERSION>=900
 		tinfo_t tif;
 		tif.get_named_type(nullptr, "_KUSER_SHARED_DATA");
 		if (!tif.present())
