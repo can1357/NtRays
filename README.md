@@ -1,6 +1,24 @@
 # NtRays
 NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Kernel decompilation.
 
+# Compile
+
+## Windows with MSVC2022
+
+```
+mkdir build
+cd build
+cmake -G "Visual Studio 17 2022" -A x64 .. -DIDA_SDK_DIR=idasdk90 -DHEXRAYS_SDK_DIR=C:\Program Files\IDA Professional 9.0\plugins\hexrays_sdk
+cmake --build . --config Release
+```
+
+## Linux
+```
+mkdir build
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DIDA_SDK_DIR=idasdk90 -DHEXRAYS_SDK_DIR=/root/idapro-9.0/plugins/hexrays_sdk/
+make
+```
 
 ## Features
 - Cleanup of instrumentation and scheduler hinting code.
