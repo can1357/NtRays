@@ -39,7 +39,6 @@ struct nt_api_descriptor {
 	};
 
 	const char *api_name;
-	const char *return_type;
 	std::vector<argument_descriptor> arguments;
 
 	inline std::string arguments_to_string() const {
@@ -55,7 +54,7 @@ struct nt_api_descriptor {
 	}
 
 	inline std::string to_string() const {
-		std::string result = return_type;
+		std::string result = "NTSTATUS";
 		result += " ";
 		result += api_name;
 		result += "(" + arguments_to_string() + ")";
@@ -90,7 +89,7 @@ for return_type, api_name, args_string in pattern.findall(nt_source):
     apis["Nt" + api_name[2:]] = [ return_type, infos ]
             
 print("const nt_api_descriptor nt_api_descriptors[] = {")
-print(",\n".join('\t{ "%s", "%s", { %s } }' % (k, v[0], ", ".join('{ "%s", "%s" }' % (at, an) for at, an in v[1])) for k, v in apis.items()))
+print(",\n".join('\t{ "%s", { %s } }' % (k, ", ".join('{ "%s", "%s" }' % (at, an) for at, an in v[1])) for k, v in apis.items()))
 print("};\n")
 
 api_to_index = { value: index for index, value in enumerate(apis.keys()) }
