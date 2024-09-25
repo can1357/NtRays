@@ -3,4 +3,7 @@
   <ItemGroup>
     <ClCompile Include="plugin.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ntdefs.hpp" />
+  </ItemGroup>
 </Project>
