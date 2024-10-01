@@ -70,6 +70,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="nt_syscalls.cpp" />
     <ClCompile Include="plugin.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -78,7 +79,10 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ntdefs.hpp" />
+    <ClInclude Include="nt_syscalls.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="nt_syscalls.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
