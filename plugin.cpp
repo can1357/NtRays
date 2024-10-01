@@ -1,7 +1,8 @@
 #include <hexsuite.hpp>
 #include <intel.hpp>
+#include <optional>
 
-#include "ntdefs.hpp"
+#include "nt_syscalls.hpp"
 
 // NT constants.
 //
@@ -334,6 +335,8 @@ struct syscall_netnode : netnode
 		explicit info_t( nodeidx_t value ) : value( value ) {}
 	};
 
+	inline static std::optional<nt_syscall_map_t> idb_scm {};
+
 	syscall_netnode() : netnode( "$ ntrays syscall", 0, true ) {}
 
 	info_t get_info( ea_t ea ) const
@@ -347,40 +350,80 @@ struct syscall_netnode : netnode
 		altset_ea( ea, info.value );
 	}
 
-	uint16_t get_syscall_id( ea_t ea ) const
+	size_t get_scm_value() const { return altval( 0 ); }
+	void set_scm_value( size_t value ) { altset( 0, value ); }
+
+	const std::pair<const char *, nt_syscall_map_t> *get_scm_preset() const
 	{
-		return get_info( ea ).id;
+		if ( auto value = get_scm_value() )
+			if ( value > 1 && value - 2 < std::size( nt_syscall_maps ) )
+				return &nt_syscall_maps[ value - 2 ];
+		return nullptr;
 	}
 
-	void set_syscall_id( ea_t ea, uint16_t id )
+	void set_scm_preset( size_t index )
 	{
-		auto info = get_info( ea );
-		info.id = id;
-		set_info( ea, info );
+		set_scm_value( index + 2 );
 	}
 
-	uint16_t get_api_id( ea_t ea ) const
+	const nt_syscall_map_t *get_scm()
 	{
-		return get_info( ea ).api_id;
+		if ( !get_scm_value() )
+			return nullptr;
+
+		if ( auto *pair = get_scm_preset() )
+			return &pair->second;
+
+		if ( !idb_scm )
+			load_scm();
+
+		return &*idb_scm;
 	}
 
-	void set_api_id( ea_t ea, uint16_t id )
+	void set_scm( nt_syscall_map_t value )
 	{
-		QASSERT( 60804, id <= std::size( nt_api_descriptors ) );
-		auto info = get_info( ea );
-		info.api_id = id;
-		set_info( ea, info );
+		set_scm_value( 1 );
+		idb_scm = std::move( value );
+		store_scm();
 	}
 
-	size_t get_winver()
+	void apply_scm( nt_syscall_map_t value )
 	{
-		return altval( 0 );
+		set_scm_value( 1 );
+		if ( idb_scm ) idb_scm->apply( std::move( value ) );
+		else idb_scm = std::move( value );
+		store_scm();
 	}
 
-	void set_winver( size_t idx )
+	const char *get_scm_name() const
 	{
-		QASSERT( 60803, idx <= std::size( nt_syscall_maps ) );
-		altset( 0, idx );
+		if ( !get_scm_value() )
+			return "None";
+		if ( auto *pair = get_scm_preset() )
+			return pair->first;
+		return "Custom";
+	}
+
+	void load_scm()
+	{
+		std::vector<uint8_t> blob{};
+		blob.resize( blobsize( 0, 'B' ) );
+		size_t tmp = blob.size();
+		getblob( blob.data(), &tmp, 0, 'B' );
+		nt_syscall_map_t map{};
+		map.deserialize( blob );
+		idb_scm = std::move( map );
+		msg( "Loaded %u NT and %u WIN32K syscall IDs from IDB\n", idb_scm->nt.size(), idb_scm->win32k.size() );
+	}
+
+	void store_scm()
+	{
+		if ( idb_scm )
+		{
+			auto blob = idb_scm->serialize();
+			setblob( blob.data(), blob.size(), 0, 'B' );
+			msg( "Saved %u NT and %u WIN32K syscall IDs to IDB\n", idb_scm->nt.size(), idb_scm->win32k.size() );
+		}
 	}
 };
 
@@ -452,7 +495,7 @@ hex::microcode_filter syscall_lifter = [ ] ( codegen_t& cg )
 
 	syscall_netnode snn{};
 	const auto info = snn.get_info( cg.insn.ea );
-	const auto winver = snn.get_winver();
+	auto *syscall_map = snn.get_scm();
 
 	const nt_api_descriptor *signature{};
 
@@ -464,21 +507,22 @@ hex::microcode_filter syscall_lifter = [ ] ( codegen_t& cg )
 	}
 	// Syscall ID is known?
 	//
-	else if ( info.id && winver )
+	else if ( info.id && syscall_map )
 	{
-		auto &id_map = nt_syscall_maps[ winver - 1 ].second;
-		if ( info.id <= id_map.size() )
-		{
-			const auto signature_id = id_map[ info.id - 1 ];
-			if ( signature_id )
-			{
-				signature = &nt_api_descriptors[ signature_id - 1 ];
-				msg( "%zX: inferred syscall signature %s from ID %u and Windows version '%s'\n", cg.insn.ea, signature->api_name, info.id - 1, nt_syscall_maps[ winver - 1 ].first );
-			}
-		}
+		const auto api_id = syscall_map->get_api_id( info.id - 1 );
 
-		if ( !signature )
+		if ( signature = api_id.get_descriptor() )
+		{
+			msg( "%zX: inferred syscall signature %s from ID %u and syscall map '%s'\n", cg.insn.ea, signature->api_name, info.id - 1, snn.get_scm_name() );
+		}
+		else if ( const char *api_name = api_id.get_missing() )
+		{
+			msg( "%zX: inferred syscall API %s from ID %u and syscall map '%s', but no signature is available\n", cg.insn.ea, api_name, info.id - 1, snn.get_scm_name() );
+		}
+		else
+		{
 			msg( "%zX: failed to infer syscall signature from ID %u\n", cg.insn.ea, info.id - 1 );
+		}			
 	}
 
 	const char *helper_name;
@@ -491,7 +535,7 @@ hex::microcode_filter syscall_lifter = [ ] ( codegen_t& cg )
 	}
 	else
 	{
-		if ( info.id && !winver ) msg( "%zX: syscall ID known but no Windows version set\n", cg.insn.ea );
+		if ( info.id && !syscall_map ) msg( "%zX: syscall ID known but no syscall map is defined\n", cg.insn.ea );
 		helper_name = "__syscall";
 		syscall_ci = hex::call_info(
 			tinfo_t{ BT_INT64 },
@@ -646,15 +690,20 @@ struct winver_chooser_t : chooser_t
 		{
 			( *out )[ 0 ] = "Disable automatic deduction";
 		}
+		else if ( n == 1 )
+		{
+			( *out )[ 0 ] = "Select a ntdll.dll or win32u.dll";
+		}
 		else
 		{
-			( *out )[ 0 ] = nt_syscall_maps[ n - 1 ].first;
+			( *out )[ 0 ] = "Preset: ";
+			( *out )[ 0 ] += nt_syscall_maps[ n - 2 ].first;
 		}
 	}
 
 	size_t idaapi get_count() const override
 	{
-		return std::size( nt_syscall_maps ) + 1;
+		return std::size( nt_syscall_maps ) + 2;
 	}
 };
 
@@ -682,13 +731,33 @@ static bool idaapi menu_set_winver(vdui_t *vdui)
 	syscall_netnode snn{};
 
 	winver_chooser_t chooser{};
-	auto choice = chooser.choose( snn.get_winver() );
+	auto choice = chooser.choose( snn.get_scm_value() );
 
 	if ( choice >= 0 )
 	{
-		syscall_netnode().set_winver( choice );
+		if (choice == 1)
+		{
+			if (const char *nt_binary_path = ask_file(false, "PE files|*.dll", "Select a ntdll.dll or win32u.dll"))
+			{
+				auto map = extract_syscall_ids(nt_binary_path);
+				if (map.valid())
+				{
+					snn.apply_scm(std::move(map));
+				}
+				else
+				{
+					msg("Failed to parse %s\n", nt_binary_path);
+				}
+			}
+		}
+		else
+		{
+			snn.set_scm_preset(choice - 2);
+		}
 		vdui->refresh_view( true );
 	}
+
+	return false;
 }
 
 namespace

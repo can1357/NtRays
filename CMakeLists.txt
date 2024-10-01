@@ -24,6 +24,7 @@ include_directories(
 # Add source files
 set(SOURCES
     plugin.cpp
+    nt_syscalls.cpp
 )
 
 # Create a shared library
