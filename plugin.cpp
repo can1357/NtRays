@@ -549,7 +549,7 @@ hex::microcode_filter syscall_lifter = [ ] ( codegen_t& cg )
 		);
 	}
 
-	syscall_ci->return_regs.add( reg2mreg( R_ax ), 64 );
+	// syscall_ci->return_regs.add( reg2mreg( R_ax ), 64 ); // this line triggers internal error 50406 with some samples
 	syscall_ci->spoiled.add( reg2mreg( R_ax ), 64 );
 	syscall_ci->spoiled.add( reg2mreg( R_cx ), 64 );
 	syscall_ci->spoiled.add( reg2mreg( R_r11 ), 64 );
@@ -735,24 +735,24 @@ static bool idaapi menu_set_winver(vdui_t *vdui)
 
 	if ( choice >= 0 )
 	{
-		if (choice == 1)
+		if ( choice == 1 )
 		{
-			if (const char *nt_binary_path = ask_file(false, "PE files|*.dll", "Select a ntdll.dll or win32u.dll"))
+			if ( const char *nt_binary_path = ask_file( false, "PE files|*.dll", "Select a ntdll.dll or win32u.dll" ) )
 			{
-				auto map = extract_syscall_ids(nt_binary_path);
-				if (map.valid())
+				auto map = extract_syscall_ids( nt_binary_path );
+				if ( map.valid() )
 				{
-					snn.apply_scm(std::move(map));
+					snn.apply_scm( std::move( map ) );
 				}
 				else
 				{
-					msg("Failed to parse %s\n", nt_binary_path);
+					msg( "Failed to parse %s\n", nt_binary_path );
 				}
 			}
 		}
 		else
 		{
-			snn.set_scm_preset(choice - 2);
+			snn.set_scm_preset( choice - 2 );
 		}
 		vdui->refresh_view( true );
 	}
