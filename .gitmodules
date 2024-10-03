@@ -1,3 +1,6 @@
 [submodule "HexSuite"]
 	path = HexSuite
 	url = https://github.com/can1357/HexSuite.git
+[submodule "linux-pe"]
+	path = linux-pe
+	url = https://github.com/can1357/linux-pe.git

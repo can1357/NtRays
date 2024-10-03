@@ -28,6 +28,8 @@ NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Ke
   
 - Replacement of KTHREAD/KPROCESS with ETHREAD/EPROCESS in user types, local variables and arguments.
 
+- Lifting of SYSCALL instructions with the ability to select Nt* signatures.
+
 ## How to compile
 
 ### Windows with Visual Studio 2022

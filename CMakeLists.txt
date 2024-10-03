@@ -18,11 +18,13 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/HexSuite
     ${IDA_SDK_DIR}/include
     ${HEXRAYS_SDK_DIR}/include
+    ${CMAKE_SOURCE_DIR}/linux-pe/includes
 )
 
 # Add source files
 set(SOURCES
     plugin.cpp
+    nt_syscalls.cpp
 )
 
 # Create a shared library
