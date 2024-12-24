@@ -1445,7 +1445,7 @@ static void remove_rsb_flush()
 	while ( true )
 	{
 #if IDP_INTERFACE_VERSION>=900
-		iterator = bin_search3(
+		iterator = bin_search(
 #else
 		iterator = bin_search2(
 #endif
