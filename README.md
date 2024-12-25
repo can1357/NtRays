@@ -49,6 +49,14 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DIDA_SDK_DIR=idasdk90 -DHEXRAYS_SDK_DIR=/ro
 make
 ```
 
+### macOS
+```
+mkdir build
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DIDA_SDK_DIR=./idasdk90 -DHEXRAYS_SDK_DIR=./idasdk90
+make
+```
+
 ## Installation
 Simply drop the NtRays64.dll into the plugins folder.
 Note: IDA 7.6+ is required.
