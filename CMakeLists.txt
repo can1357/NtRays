@@ -113,8 +113,8 @@ if(UNIX)
     endif()
 elseif(MSVC)
     target_link_libraries(NtRays
-        ${IDA_SDK_DIR}/lib/x64_win_vc_64/ida.lib
-        ${IDA_SDK_DIR}/lib/x64_win_vc_64_s/pro.lib
+        ${IDA_SDK_DIR}/lib/x64_win_vc_64/ida
+        ${IDA_SDK_DIR}/lib/x64_win_vc_64_s/pro
     )
 endif()
 
