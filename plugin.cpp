@@ -1553,18 +1553,14 @@ struct ntrays : plugmod_t
         // Get the file type name and store it in the buffer
         size_t size = get_file_type_name(file_type, sizeof(file_type));
 
-        msg("[NtRays] Da size is: %d\n", size);
-        msg("[NtRays] Da string is: %s\n", file_type);
         
         // Only automatically enable if the binary is a Windows (PE) file
         if (size > 0 && strstr(file_type, "PE") != nullptr && nn.altval(0) == 0)
         {
-            msg("[NtRays] set_state(true)\n");
             set_state(true);
         }
         else
         {
-            msg("[NtRays] set_state(false)\n");
             set_state(false);
         }
     }
