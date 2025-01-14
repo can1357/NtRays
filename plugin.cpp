@@ -1553,14 +1553,15 @@ struct ntrays : plugmod_t
         // Get the file type name and store it in the buffer
         size_t size = get_file_type_name(file_type, sizeof(file_type));
 
-        
         // Only automatically enable if the binary is a Windows (PE) file
         if (size > 0 && strstr(file_type, "PE") != nullptr && nn.altval(0) == 0)
         {
+			nn.altset( 0, 0 ); // Set plugin state to "enabled"
             set_state(true);
         }
         else
         {
+			nn.altset( 0, 1 ); // Set plugin state to "disabled"
             set_state(false);
         }
     }
@@ -1581,11 +1582,10 @@ State: %s)";
 		if ( code < 0 )
 			return true;
 
-		// Fix the logic so that the "Enable" button sets the plugin state to true
-		if (code == 0) {
+		if (code == 1) {
 			nn.altset( 0, 0 );  // Set to "enabled"
 			set_state(true);     // Enable the plugin
-		} else if (code == 1) {
+		} else if (code == 0) {
 			nn.altset( 0, 1 );  // Set to "disabled"
 			set_state(false);    // Disable the plugin
 		}
