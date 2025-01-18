@@ -1547,14 +1547,9 @@ struct ntrays : plugmod_t
 
     ntrays()
     {
-        // Define a buffer to store the file type name
-        char file_type[256] = {0};
-        
-        // Get the file type name and store it in the buffer
-        size_t size = get_file_type_name(file_type, sizeof(file_type));
 
         // Only automatically enable if the binary is a Windows (PE) file
-        if (size > 0 && strstr(file_type, "PE") != nullptr && nn.altval(0) == 0)
+        if (inf_get_filetype() == f_PE && nn.altval(0) == 0)
         {
 			nn.altset( 0, 0 ); // Set plugin state to "enabled"
             set_state(true);
