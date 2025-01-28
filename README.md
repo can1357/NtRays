@@ -34,10 +34,12 @@ NtRays is a Hex-Rays microcode plugin for automated simplification of Windows Ke
 
 ### Windows with Visual Studio 2022
 
+Place a copy of idasdk90 in the root directory of NtRays as well as in the build folder.
+
 ```
 mkdir build
 cd build
-cmake -G "Visual Studio 17 2022" -A x64 .. -DIDA_SDK_DIR=idasdk90 -DHEXRAYS_SDK_DIR=C:\Program Files\IDA Professional 9.0\plugins\hexrays_sdk
+cmake -G "Visual Studio 17 2022" -A x64 .. -DIDA_SDK_DIR=idasdk90 -DHEXRAYS_SDK_DIR=idasdk90
 cmake --build . --config Release
 ```
 
