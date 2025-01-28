@@ -1522,42 +1522,71 @@ constexpr hex::component* component_list[] = {
 //
 struct ntrays : plugmod_t
 {
-	netnode nn = { "$ ntrays", 0, true };
-	hex::component_list components{ component_list };
+    netnode nn = { "$ ntrays", 0, true };
+    hex::component_list components{ component_list };
 
-	void set_state( bool s ) 
-	{
-		if ( s )
-		{
-			remove_rsb_flush();
-			create_kuser_seg();
-			fix_udts();
+    void set_state( bool s ) 
+    {
+        if ( s )
+        {
+            remove_rsb_flush();
+            create_kuser_seg();
+            fix_udts();
 
-			for ( const auto &desc : action_descs )
-				register_action( desc );
-		}
-		else
-		{
-			for ( const auto &desc : action_descs )
-				unregister_action(desc.name);
-		}
-		components.set_state( s );
-	}
-	ntrays() { set_state( nn.altval( 0 ) == 0 ); }
-	~ntrays() { set_state(false); components.uninstall(); }
+            for ( const auto &desc : action_descs )
+                register_action( desc );
+        }
+        else
+        {
+            for ( const auto &desc : action_descs )
+                unregister_action(desc.name);
+        }
+        components.set_state( s );
+        nn.altset(0, s ? 0 : 1); // Set the correct state (0 = enabled, 1 = disabled)
+    }
 
-	bool run( size_t ) override
-	{
-		constexpr const char* format = R"(
+    ntrays()
+    {
+
+        // Only automatically enable if the binary is a Windows (PE) file
+        if (inf_get_filetype() == f_PE && nn.altval(0) == 0)
+        {
+			nn.altset( 0, 0 ); // Set plugin state to "enabled"
+            set_state(true);
+        }
+        else
+        {
+			nn.altset( 0, 1 ); // Set plugin state to "disabled"
+            set_state(false);
+        }
+    }
+
+    ~ntrays() { set_state(false); components.uninstall(); }
+
+    bool run( size_t ) override
+    {
+        constexpr const char* format = R"(
 AUTOHIDE NONE
 NtRays for Hex-Rays decompiler.
 State: %s)";
-		int code = ask_buttons( "~E~nable", "~D~isable", "~C~lose", -1, format + 1, nn.altval( 0 ) == 0 ? "Enabled" : "Disabled" );
+
+        // Determine the state text based on nn.altval(0)
+        const char* state_text = (nn.altval(0) == 0) ? "Enabled" : "Disabled";
+
+		int code = ask_buttons( "~E~nable", "~D~isable", "~C~lose", -1, format + 1, state_text );
 		if ( code < 0 )
 			return true;
-		nn.altset( 0, code ? 0 : 1 );
-		set_state( code );
-		return true;
-	}
+
+		if (code == 1) {
+			nn.altset( 0, 0 );  // Set to "enabled"
+			set_state(true);     // Enable the plugin
+		} else if (code == 0) {
+			nn.altset( 0, 1 );  // Set to "disabled"
+			set_state(false);    // Disable the plugin
+		}
+
+        return true;
+    }
 };
+
 plugin_t PLUGIN = { IDP_INTERFACE_VERSION, PLUGIN_MULTI, hex::init_hexray<ntrays>, nullptr, nullptr, "NtRays", nullptr, "NtRays", nullptr,};
